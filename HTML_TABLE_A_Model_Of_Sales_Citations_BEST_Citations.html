@@ -1,0 +1,1299 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>JabRef references</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<script type="text/javascript">
+<!--
+// QuickSearch script for JabRef HTML export 
+// Version: 3.0
+//
+// Copyright (c) 2006-2011, Mark Schenk
+//
+// This software is distributed under a Creative Commons Attribution 3.0 License
+// http://creativecommons.org/licenses/by/3.0/
+//
+// Features:
+// - intuitive find-as-you-type searching
+//    ~ case insensitive
+//    ~ ignore diacritics (optional)
+//
+// - search with/without Regular Expressions
+// - match BibTeX key
+//
+
+// Search settings
+var searchAbstract = true;	// search in abstract
+var searchReview = true;	// search in review
+
+var noSquiggles = true; 	// ignore diacritics when searching
+var searchRegExp = false; 	// enable RegExp searches
+
+
+if (window.addEventListener) {
+	window.addEventListener("load",initSearch,false); }
+else if (window.attachEvent) {
+	window.attachEvent("onload", initSearch); }
+
+function initSearch() {
+	// check for quick search table and searchfield
+	if (!document.getElementById('qs_table')||!document.getElementById('quicksearch')) { return; }
+
+	// load all the rows and sort into arrays
+	loadTableData();
+	
+	//find the query field
+	qsfield = document.getElementById('qs_field');
+
+	// previous search term; used for speed optimisation
+	prevSearch = '';
+
+	//find statistics location
+	stats = document.getElementById('stat');
+	setStatistics(-1);
+	
+	// set up preferences
+	initPreferences();
+
+	// shows the searchfield
+	document.getElementById('quicksearch').style.display = 'block';
+	document.getElementById('qs_field').onkeyup = quickSearch;
+}
+
+function loadTableData() {
+	// find table and appropriate rows
+	searchTable = document.getElementById('qs_table');
+	var allRows = searchTable.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+	// split all rows into entryRows and infoRows (e.g. abstract, review, bibtex)
+	entryRows = new Array(); infoRows = new Array(); absRows = new Array(); revRows = new Array();
+
+	// get data from each row
+	entryRowsData = new Array(); absRowsData = new Array(); revRowsData = new Array(); 
+	
+	BibTeXKeys = new Array();
+	
+	for (var i=0, k=0, j=0; i<allRows.length;i++) {
+		if (allRows[i].className.match(/entry/)) {
+			entryRows[j] = allRows[i];
+			entryRowsData[j] = stripDiacritics(getTextContent(allRows[i]));
+			allRows[i].id ? BibTeXKeys[j] = allRows[i].id : allRows[i].id = 'autokey_'+j;
+			j ++;
+		} else {
+			infoRows[k++] = allRows[i];
+			// check for abstract/review
+			if (allRows[i].className.match(/abstract/)) {
+				absRows.push(allRows[i]);
+				absRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			} else if (allRows[i].className.match(/review/)) {
+				revRows.push(allRows[i]);
+				revRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			}
+		}
+	}
+	//number of entries and rows
+	numEntries = entryRows.length;
+	numInfo = infoRows.length;
+	numAbs = absRows.length;
+	numRev = revRows.length;
+}
+
+function quickSearch(){
+	
+	tInput = qsfield;
+
+	if (tInput.value.length == 0) {
+		showAll();
+		setStatistics(-1);
+		qsfield.className = '';
+		return;
+	} else {
+		t = stripDiacritics(tInput.value);
+
+		if(!searchRegExp) { t = escapeRegExp(t); }
+			
+		// only search for valid RegExp
+		try {
+			textRegExp = new RegExp(t,"i");
+			closeAllInfo();
+			qsfield.className = '';
+		}
+			catch(err) {
+			prevSearch = tInput.value;
+			qsfield.className = 'invalidsearch';
+			return;
+		}
+	}
+	
+	// count number of hits
+	var hits = 0;
+
+	// start looping through all entry rows
+	for (var i = 0; cRow = entryRows[i]; i++){
+
+		// only show search the cells if it isn't already hidden OR if the search term is getting shorter, then search all
+		if(cRow.className.indexOf('noshow')==-1 || tInput.value.length <= prevSearch.length){
+			var found = false; 
+
+			if (entryRowsData[i].search(textRegExp) != -1 || BibTeXKeys[i].search(textRegExp) != -1){ 
+				found = true;
+			} else {
+				if(searchAbstract && absRowsData[i]!=undefined) {
+					if (absRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+				if(searchReview && revRowsData[i]!=undefined) {
+					if (revRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+			}
+			
+			if (found){
+				cRow.className = 'entry show';
+				hits++;
+			} else {
+				cRow.className = 'entry noshow';
+			}
+		}
+	}
+
+	// update statistics
+	setStatistics(hits)
+	
+	// set previous search value
+	prevSearch = tInput.value;
+}
+
+
+// Strip Diacritics from text
+// http://stackoverflow.com/questions/990904/javascript-remove-accents-in-strings
+
+// String containing replacement characters for stripping accents 
+var stripstring = 
+    'AAAAAAACEEEEIIII'+
+    'DNOOOOO.OUUUUY..'+
+    'aaaaaaaceeeeiiii'+
+    'dnooooo.ouuuuy.y'+
+    'AaAaAaCcCcCcCcDd'+
+    'DdEeEeEeEeEeGgGg'+
+    'GgGgHhHhIiIiIiIi'+
+    'IiIiJjKkkLlLlLlL'+
+    'lJlNnNnNnnNnOoOo'+
+    'OoOoRrRrRrSsSsSs'+
+    'SsTtTtTtUuUuUuUu'+
+    'UuUuWwYyYZzZzZz.';
+
+function stripDiacritics(str){
+
+    if(noSquiggles==false){
+        return str;
+    }
+
+    var answer='';
+    for(var i=0;i<str.length;i++){
+        var ch=str[i];
+        var chindex=ch.charCodeAt(0)-192;   // Index of character code in the strip string
+        if(chindex>=0 && chindex<stripstring.length){
+            // Character is within our table, so we can strip the accent...
+            var outch=stripstring.charAt(chindex);
+            // ...unless it was shown as a '.'
+            if(outch!='.')ch=outch;
+        }
+        answer+=ch;
+    }
+    return answer;
+}
+
+// http://stackoverflow.com/questions/3446170/escape-string-for-use-in-javascript-regex
+// NOTE: must escape every \ in the export code because of the JabRef Export...
+function escapeRegExp(str) {
+  return str.replace(/[-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+}
+
+function toggleInfo(articleid,info) {
+
+	var entry = document.getElementById(articleid);
+	var abs = document.getElementById('abs_'+articleid);
+	var rev = document.getElementById('rev_'+articleid);
+	var bib = document.getElementById('bib_'+articleid);
+	
+	if (abs && info == 'abstract') {
+		abs.className.indexOf('noshow') == -1?abs.className = 'abstract noshow':abs.className = 'abstract show';
+	} else if (rev && info == 'review') {
+		rev.className.indexOf('noshow') == -1?rev.className = 'review noshow':rev.className = 'review show';
+	} else if (bib && info == 'bibtex') {
+		bib.className.indexOf('noshow') == -1?bib.className = 'bibtex noshow':bib.className = 'bibtex show';
+	} else { 
+		return;
+	}
+
+	// check if one or the other is available
+	var revshow; var absshow; var bibshow;
+	(abs && abs.className.indexOf('noshow') == -1)? absshow = true: absshow = false;
+	(rev && rev.className.indexOf('noshow') == -1)? revshow = true: revshow = false;	
+	(bib && bib.className.indexOf('noshow') == -1)? bibshow = true: bibshow = false;
+	
+	// highlight original entry
+	if(entry) {
+		if (revshow || absshow || bibshow) {
+		entry.className = 'entry highlight show';
+		} else {
+		entry.className = 'entry show';
+		}
+	}
+	
+	// When there's a combination of abstract/review/bibtex showing, need to add class for correct styling
+	if(absshow) {
+		(revshow||bibshow)?abs.className = 'abstract nextshow':abs.className = 'abstract';
+	} 
+	if (revshow) {
+		bibshow?rev.className = 'review nextshow': rev.className = 'review';
+	}	
+	
+}
+
+function setStatistics (hits) {
+	if(hits < 0) { hits=numEntries; }
+	if(stats) { stats.firstChild.data = hits + '/' + numEntries}
+}
+
+function getTextContent(node) {
+	// Function written by Arve Bersvendsen
+	// http://www.virtuelvis.com
+	
+	if (node.nodeType == 3) {
+	return node.nodeValue;
+	} // text node
+	if (node.nodeType == 1 && node.className != "infolinks") { // element node
+	var text = [];
+	for (var chld = node.firstChild;chld;chld=chld.nextSibling) {
+		text.push(getTextContent(chld));
+	}
+	return text.join("");
+	} return ""; // some other node, won't contain text nodes.
+}
+
+function showAll(){
+	closeAllInfo();
+	for (var i = 0; i < numEntries; i++){ entryRows[i].className = 'entry show'; }
+}
+
+function closeAllInfo(){
+	for (var i=0; i < numInfo; i++){
+		if (infoRows[i].className.indexOf('noshow') ==-1) {
+			infoRows[i].className = infoRows[i].className + ' noshow';
+		}
+	}
+}
+
+function clearQS() {
+	qsfield.value = '';
+	showAll();
+}
+
+function redoQS(){
+	showAll();
+	quickSearch(qsfield);
+}
+
+function updateSetting(obj){
+	var option = obj.id;
+	var checked = obj.value;
+
+	switch(option)
+	 {
+	 case "opt_searchAbs":
+	   searchAbstract=!searchAbstract;
+	   redoQS();
+	   break;
+	 case "opt_searchRev":
+	   searchReview=!searchReview;
+	   redoQS();
+	   break;
+	 case "opt_useRegExp":
+	   searchRegExp=!searchRegExp;
+	   redoQS();
+	   break;
+	 case "opt_noAccents":
+	   noSquiggles=!noSquiggles;
+	   loadTableData();
+	   redoQS();
+	   break;
+	 }
+}
+
+function initPreferences(){
+	if(searchAbstract){document.getElementById("opt_searchAbs").checked = true;}
+	if(searchReview){document.getElementById("opt_searchRev").checked = true;}
+	if(noSquiggles){document.getElementById("opt_noAccents").checked = true;}
+	if(searchRegExp){document.getElementById("opt_useRegExp").checked = true;}
+	
+	if(numAbs==0) {document.getElementById("opt_searchAbs").parentNode.style.display = 'none';}
+	if(numRev==0) {document.getElementById("opt_searchRev").parentNode.style.display = 'none';}
+}
+
+function toggleSettings(){
+	var togglebutton = document.getElementById('showsettings');
+	var settings = document.getElementById('settings');
+	
+	if(settings.className == "hidden"){
+		settings.className = "show";
+		togglebutton.innerText = "close settings";
+		togglebutton.textContent = "close settings";
+	}else{
+		settings.className = "hidden";
+		togglebutton.innerText = "settings...";		
+		togglebutton.textContent = "settings...";
+	}
+}
+
+-->
+</script>
+<style type="text/css">
+body { background-color: white; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.2; padding: 1em; color: #2E2E2E; margin: auto 2em; }
+
+form#quicksearch { width: auto; border-style: solid; border-color: gray; border-width: 1px 0px; padding: 0.7em 0.5em; display:none; position:relative; }
+span#searchstat {padding-left: 1em;}
+
+div#settings { margin-top:0.7em; /* border-bottom: 1px transparent solid; background-color: #efefef; border: 1px grey solid; */ }
+div#settings ul {margin: 0; padding: 0; }
+div#settings li {margin: 0; padding: 0 1em 0 0; display: inline; list-style: none; }
+div#settings li + li { border-left: 2px #efefef solid; padding-left: 0.5em;}
+div#settings input { margin-bottom: 0px;}
+
+div#settings.hidden {display:none;}
+
+#showsettings { border: 1px grey solid; padding: 0 0.5em; float:right; line-height: 1.6em; text-align: right; }
+#showsettings:hover { cursor: pointer; }
+
+.invalidsearch { background-color: red; }
+input[type="button"] { background-color: #efefef; border: 1px #2E2E2E solid;}
+
+table { width: 100%; empty-cells: show; border-spacing: 0em 0.2em; margin: 1em 0em; border-style: none; }
+th, td { border: 1px gray solid; border-width: 1px 1px; padding: 0.5em; vertical-align: top; text-align: left; }
+th { background-color: #efefef; }
+td + td, th + th { border-left: none; }
+
+td a { color: navy; text-decoration: none; }
+td a:hover  { text-decoration: underline; }
+
+tr.noshow { display: none;}
+tr.highlight td { background-color: #EFEFEF; border-top: 2px #2E2E2E solid; font-weight: bold; }
+tr.abstract td, tr.review td, tr.bibtex td { background-color: #EFEFEF; text-align: justify; border-bottom: 2px #2E2E2E solid; }
+tr.nextshow td { border-bottom: 1px gray solid; }
+
+tr.bibtex pre { width: 100%; overflow: auto; white-space: pre-wrap;}
+p.infolinks { margin: 0.3em 0em 0em 0em; padding: 0px; }
+
+@media print {
+	p.infolinks, #qs_settings, #quicksearch, t.bibtex { display: none !important; }
+	tr { page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<form action="" id="quicksearch">
+<input type="text" id="qs_field" autocomplete="off" placeholder="Type to search..." /> <input type="button" onclick="clearQS()" value="clear" />
+<span id="searchstat">Matching entries: <span id="stat">0</span></span>
+<div id="showsettings" onclick="toggleSettings()">settings...</div>
+<div id="settings" class="hidden">
+<ul>
+<li><input type="checkbox" class="search_setting" id="opt_searchAbs" onchange="updateSetting(this)"><label for="opt_searchAbs"> include abstract</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_searchRev" onchange="updateSetting(this)"><label for="opt_searchRev"> include review</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_useRegExp" onchange="updateSetting(this)"><label for="opt_useRegExp"> use RegExp</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_noAccents" onchange="updateSetting(this)"><label for="opt_noAccents"> ignore accents</label></li>
+</ul>
+</div>
+</form>
+<table id="qs_table" border="1">
+<thead><tr><th width="20%">Author</th><th width="30%">Title</th><th width="5%">Year</th><th width="30%">Journal/Proceedings</th><th width="10%">Reftype</th><th width="5%">DOI/URL</th></tr></thead>
+<tbody><tr id="ISI:000254588200008" class="entry">
+	<td>Gauri, D.K., Sudhir, K. and Talukdar, D.</td>
+	<td>The temporal and spatial dimensions of price search: Insights from matching household survey and purchase data <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000254588200008','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000254588200008','bibtex')">BibTeX</a>]</p></td>
+	<td>{2008}</td>
+	<td>JOURNAL OF MARKETING RESEARCH<br/>Vol. {45}({2}), pp. {226-240}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1509/jmkr.45.2.226}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000254588200008" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Price promotions are pervasive in grocery markets. A household can<br>   respond to price promotions by effectively cherry-picking through (1)<br>   spatial price search across stores and (2) temporal price search across<br>   time. However, extant research has analyzed these two dimensions of<br>   price search only separately and therefore underestimates both the<br>   consumer response to price promotions and the impact of promotions on<br>   retail profit. In this article, the authors introduce an integrated<br>   analysis of spatial and temporal price search. They seek answers to<br>   three questions: First, what are the predictors of household decisions<br>   to perform either spatial or temporal price search? Second, how<br>   effective are the temporal, spatial, and spatiotemporal price search<br>   strategies in obtaining lower prices? and Third, what is the impact of<br>   alternative price search strategies on retailer profit? The authors use<br>   a unique data collection approach that combines household surveys with<br>   observed purchase data to address these questions. Their key results are<br>   as follows: Geography (the spatial configuration of store and household<br>   locations) and opportunity costs are useful predictors of a household's<br>   price search pattern. Households that claim to search spatiotemporally<br>   avail approximately three-quarters of the available savings on average.<br>   Households that search only temporally save about the same as those that<br>   search only spatially. The negative effect of cherry-picking on retailer<br>   profits is not as high as is typically believed.</td>
+</tr>
+<tr id="bib_ISI:000254588200008" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000254588200008,
+  author = {Gauri, Dinesh K. and Sudhir, K. and Talukdar, Debabrata},
+  title = {The temporal and spatial dimensions of price search: Insights from matching household survey and purchase data},
+  journal = {JOURNAL OF MARKETING RESEARCH},
+  publisher = {AMER MARKETING ASSOC},
+  year = {2008},
+  volume = {45},
+  number = {2},
+  pages = {226-240},
+  doi = {{10.1509/jmkr.45.2.226}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000255849600009" class="entry">
+	<td>Kocas, C. and Bohlmann, J.D.</td>
+	<td>Segmented switchers and retailer pricing strategies <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000255849600009','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000255849600009','bibtex')">BibTeX</a>]</p></td>
+	<td>{2008}</td>
+	<td>JOURNAL OF MARKETING<br/>Vol. {72}({3}), pp. {124-142}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1509/jmkg.72.3.124}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000255849600009" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Empirical studies reveal a surprisingly wide variety of pricing<br>   strategies among retailers, even among Internet sellers of<br>   undifferentiated homogeneous goods, such as books and music CDs. Several<br>   empirical findings remain puzzling; for example, within the same market,<br>   some small retailers decide to discount deeply, whereas others forgo the<br>   price-sensitive switchers and price high. The authors present<br>   theoretical and empirical analyses that address these varied pricing<br>   strategies. A model of three asymmetric firms shows that under multiple<br>   switcher segments, in which different switchers compare prices at<br>   different retailers, firm-specific loyalty is not sufficient to explain<br>   the variety of pricing strategies. The authors demonstrate that a<br>   retailer's strategy to discount deeply or frequently is driven by the<br>   ratio of the size of switcher segments for which the retailer competes<br>   to its loyal segment size. The relative switcher-to-loyal ratios among<br>   retailers explain situations in which a small retailer finds it optimal<br>   to price high, despite having few loyals, or to discount and go for the<br>   switchers. The results of two empirical studies confirm the model's<br>   predictions for varied pricing strategies in the context of Internet<br>   booksellers. The analyses also present several implications. A small<br>   retailer can sometimes benefit from strategically limiting its access to<br>   switchers to soften price competition. A midsized retailer can benefit<br>   from targeting its switcher acquisition activities toward its larger<br>   rival, given the shallower discounts involved. When most switchers<br>   widely compare prices, a large retailer should offer few shallow<br>   discounts because other firms will more aggressively discount. The<br>   importance of switcher segmentation suggests that managers should<br>   carefully measure switching behavior in devising pricing strategies.</td>
+</tr>
+<tr id="bib_ISI:000255849600009" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000255849600009,
+  author = {Kocas, Cenk and Bohlmann, Jonathan D.},
+  title = {Segmented switchers and retailer pricing strategies},
+  journal = {JOURNAL OF MARKETING},
+  publisher = {AMER MARKETING ASSOC},
+  year = {2008},
+  volume = {72},
+  number = {3},
+  pages = {124-142},
+  doi = {{10.1509/jmkg.72.3.124}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000258986200004" class="entry">
+	<td>Galeotti, A. and Moraga-Gonzalez, J.L.</td>
+	<td>Segmentation, advertising and prices <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000258986200004','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000258986200004','bibtex')">BibTeX</a>]</p></td>
+	<td>{2008}</td>
+	<td>INTERNATIONAL JOURNAL OF INDUSTRIAL ORGANIZATION<br/>Vol. {26}({5}), pp. {1106-1119}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1016/j.ijindorg.2007.11.002}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000258986200004" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: This paper explores the implications of market segmentation on firm<br>   competitiveness. In contrast to earlier work, here market segmentation<br>   is minimal in the sense that it is based on consumer attributes that are<br>   completely unrelated to tastes. We show that when the market is<br>   comprised by two consumer segments and when there is sufficient<br>   variation in the per-consumer costs firms need to incur to access the<br>   different consumer populations, then firms obtain positive profits in<br>   symmetric equilibrium. Otherwise, the equilibrium is characterized by<br>   zero profits. As a result, a minimal form of market segmentation<br>   combined with advertising cost asymmetries across consumer segments give<br>   firms an opportunity to generate positive rents in an otherwise<br>   Bertrand-like environment. (C) 2007 Elsevier B.V. All rights reserved.</td>
+</tr>
+<tr id="bib_ISI:000258986200004" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000258986200004,
+  author = {Galeotti, Andrea and Moraga-Gonzalez, Jose Luis},
+  title = {Segmentation, advertising and prices},
+  journal = {INTERNATIONAL JOURNAL OF INDUSTRIAL ORGANIZATION},
+  publisher = {ELSEVIER SCIENCE BV},
+  year = {2008},
+  volume = {26},
+  number = {5},
+  pages = {1106-1119},
+  doi = {{10.1016/j.ijindorg.2007.11.002}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000260188900005" class="entry">
+	<td>Ellickson, P.B. and Misra, S.</td>
+	<td>Supermarket Pricing Strategies <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000260188900005','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000260188900005','bibtex')">BibTeX</a>]</p></td>
+	<td>{2008}</td>
+	<td>MARKETING SCIENCE<br/>Vol. {27}({5}), pp. {811-828}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1287/mksc.1080.0398}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000260188900005" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Most supermarket firms choose to position themselves by offering either<br>   everyday low prices (EDLP) across several items or offering temporary<br>   price reductions (promotions) on a limited range of items. While this<br>   choice has been addressed from a theoretical perspective in both the<br>   marketing and economic literature, relatively little is known about how<br>   these decisions are made in practice, especially within a competitive<br>   environment. This paper exploits a unique store level data set<br>   consisting of every supermarket operating in the United States in 1998.<br>   For each of these stores, we observe the pricing strategy the firm has<br>   chosen to follow, as reported by the firm itself. Using a system of<br>   simultaneous discrete choice models, we estimate each store's choice of<br>   pricing strategy as a static discrete game of incomplete information. In<br>   contrast to the predictions of the theoretical literature, we find<br>   strong evidence that firms cluster by strategy by choosing actions that<br>   agree with those of its rivals. We also find a significant impact of<br>   various demographic and store/chain characteristics, providing some<br>   qualified support for several specific predictions from marketing<br>   theory.</td>
+</tr>
+<tr id="bib_ISI:000260188900005" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000260188900005,
+  author = {Ellickson, Paul B. and Misra, Sanjog},
+  title = {Supermarket Pricing Strategies},
+  journal = {MARKETING SCIENCE},
+  publisher = {INFORMS},
+  year = {2008},
+  volume = {27},
+  number = {5},
+  pages = {811-828},
+  doi = {{10.1287/mksc.1080.0398}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000288811600001" class="entry">
+	<td>Hoffmann, A. and Loy, J.-P.</td>
+	<td>Sales and Price Synchronization in German Food Retailing <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000288811600001','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000288811600001','bibtex')">BibTeX</a>]</p></td>
+	<td>{2010}</td>
+	<td>GERMAN JOURNAL OF AGRICULTURAL ECONOMICS<br/>Vol. {59}({4}), pp. {225-245}&nbsp;</td>
+	<td>article</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="abs_ISI:000288811600001" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: German food retailing is characterized by a strong price competition.<br>   Thus, we would expect the law of one price to hold and price adjustments<br>   to occur simultaneously. However, significant price differences can be<br>   observed which are often caused by sales. As price promotions are not<br>   related to supply or demand changes, they might bias measures of price<br>   synchronization. As dairy products are a key category that is often used<br>   in sales, we study the impact of price promotions on measures of price<br>   synchronization using dairy product prices in the German food retail<br>   market.<br>   Our results show with a very few exceptions that price promotions<br>   significantly bias the measures of price synchronization within and<br>   between stores. Over all stores and products 25&#37; of regular prices are<br>   synchronized but only 10&#37; of promotional prices occur simultaneously.<br>   Discounters synchronize regular price changes to a greater extent and<br>   promotional prices to a lesser extent. The level of price<br>   synchronization between stores indicates a positive correlation with the<br>   number of competitors and with the level of menu costs. Price<br>   synchronization is lower for perishable compared to durable products.<br>   Also, some store and chain effects are observed. Within stores, regular<br>   price changes of substituting brands are highly synchronized whereas<br>   price promotions are staggered within the same category.</td>
+</tr>
+<tr id="bib_ISI:000288811600001" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000288811600001,
+  author = {Hoffmann, Angela and Loy, Jens-Peter},
+  title = {Sales and Price Synchronization in German Food Retailing},
+  journal = {GERMAN JOURNAL OF AGRICULTURAL ECONOMICS},
+  publisher = {DEUTSCHER FACHVERLAG GMBH},
+  year = {2010},
+  volume = {59},
+  number = {4},
+  pages = {225-245}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000338909800009" class="entry">
+	<td>Glandon, P.J. and Jaremski, M.</td>
+	<td>Sales and Firm Entry: The Case of Wal-Mart <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000338909800009','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000338909800009','bibtex')">BibTeX</a>]</p></td>
+	<td>{2014}</td>
+	<td>SOUTHERN ECONOMIC JOURNAL<br/>Vol. {81}({1}), pp. {168-192}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.4284/0038-4038-2012.108}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000338909800009" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Temporary price reductions or ``sales'' have become increasingly<br>   important in the evolution of the price level. We present a model of<br>   repeated price competition to illustrate how entry causes incumbents to<br>   alternate between high and low prices. Using a six-year panel of weekly<br>   observations from a grocery chain, we find that individual stores employ<br>   more sales as the distance to Wal-Mart falls. Moreover, the increase in<br>   the frequency of sales was concentrated on the most popular products,<br>   suggesting the use of a loss-leader strategy.</td>
+</tr>
+<tr id="bib_ISI:000338909800009" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000338909800009,
+  author = {Glandon, P. J. and Jaremski, Matthew},
+  title = {Sales and Firm Entry: The Case of Wal-Mart},
+  journal = {SOUTHERN ECONOMIC JOURNAL},
+  publisher = {WILEY-BLACKWELL},
+  year = {2014},
+  volume = {81},
+  number = {1},
+  pages = {168-192},
+  doi = {{10.4284/0038-4038-2012.108}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000343022000034" class="entry">
+	<td>Arnold, M.A. and Zhang, L.</td>
+	<td>The unique equilibrium in a model of sales with costly advertising <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000343022000034','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000343022000034','bibtex')">BibTeX</a>]</p></td>
+	<td>{2014}</td>
+	<td>ECONOMICS LETTERS<br/>Vol. {124}({3}), pp. {457-460}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1016/j.econlet.2014.07.005}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000343022000034" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We demonstrate that the Varian (1980) model of sales has a unique Nash<br>   equilibrium when firms incur costly advertising to compete for informed<br>   consumers. The equilibrium is symmetric. In particular, with costly<br>   advertising, the asymmetric equilibria highlighted by Baye et al. (1992)<br>   do not arise. (C) 2014 Elsevier B.V. All rights reserved.</td>
+</tr>
+<tr id="bib_ISI:000343022000034" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000343022000034,
+  author = {Arnold, Michael A. and Zhang, Lan},
+  title = {The unique equilibrium in a model of sales with costly advertising},
+  journal = {ECONOMICS LETTERS},
+  publisher = {ELSEVIER SCIENCE SA},
+  year = {2014},
+  volume = {124},
+  number = {3},
+  pages = {457-460},
+  doi = {{10.1016/j.econlet.2014.07.005}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000350114400011" class="entry">
+	<td>Rhodes, A.</td>
+	<td>Multiproduct Retailing <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000350114400011','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000350114400011','bibtex')">BibTeX</a>]</p></td>
+	<td>{2015}</td>
+	<td>REVIEW OF ECONOMIC STUDIES<br/>Vol. {82}({1}), pp. {360-390}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1093/restud/rdu032}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000350114400011" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We study the pricing behaviour of a multiproduct firm, when consumers<br>   must pay a search cost to learn its prices. Equilibrium prices are high,<br>   because consumers understand that visiting a store exposes them to a<br>   hold-up problem. However, a firm with more products charges lower<br>   prices, because it attracts consumers who are more price sensitive.<br>   Similarly, when a firm advertises a low price on one product, consumers<br>   rationally expect it to charge somewhat lower prices on its other<br>   products as well. We therefore find that having a large product range,<br>   and advertising a low price on one product, are substitute ways of<br>   building a ``low-price image''. Finally, we show that in a competitive<br>   setting each product has a high regular price, with firms occasionally<br>   giving random discounts that are positively correlated across products.</td>
+</tr>
+<tr id="bib_ISI:000350114400011" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000350114400011,
+  author = {Rhodes, Andrew},
+  title = {Multiproduct Retailing},
+  journal = {REVIEW OF ECONOMIC STUDIES},
+  publisher = {OXFORD UNIV PRESS},
+  year = {2015},
+  volume = {82},
+  number = {1},
+  pages = {360-390},
+  doi = {{10.1093/restud/rdu032}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000350542900008" class="entry">
+	<td>Empen, J. and Hamilton, S.F.</td>
+	<td>How Do Retailers Price Beer During Periods of Peak Demand? Evidence from Game Weeks of the German Bundesliga <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000350542900008','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000350542900008','bibtex')">BibTeX</a>]</p></td>
+	<td>{2015}</td>
+	<td>SOUTHERN ECONOMIC JOURNAL<br/>Vol. {81}({3}), pp. {679-696}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1002/soej.12000}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000350542900008" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: This article considers retail beer pricing during game weeks of the<br>   German Bundesliga. German consumers exhibit a high degree of<br>   brand-loyalty in their preference for regionally crafted beers, and we<br>   exploit the regional brand-loyalty of German beer consumers to identify<br>   brand-level demand shocks for beers preferred by the home team's fans<br>   and visiting team's fans during Bundesliga game weeks. We find retailer<br>   price adjustments at the category level mask a considerably more nuanced<br>   pricing behavior at the brand level. Retailers in regions hosting<br>   Bundesliga games significantly increase beer prices at the category<br>   level during game weeks; however, at the brand level, we find retailers<br>   selectively discount prices on the home team's sponsored beers and<br>   systematically raise prices on the visiting team's sponsored beers. Our<br>   findings are consistent with a tourist-natives model of retail pricing<br>   during periods of increased demand in the German beer market.</td>
+</tr>
+<tr id="bib_ISI:000350542900008" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000350542900008,
+  author = {Empen, Janine and Hamilton, Stephen F.},
+  title = {How Do Retailers Price Beer During Periods of Peak Demand? Evidence from Game Weeks of the German Bundesliga},
+  journal = {SOUTHERN ECONOMIC JOURNAL},
+  publisher = {WILEY-BLACKWELL},
+  year = {2015},
+  volume = {81},
+  number = {3},
+  pages = {679-696},
+  doi = {{10.1002/soej.12000}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000352012900007" class="entry">
+	<td>Genesove, D. and Simhon, A.</td>
+	<td>SEASONALITY AND THE EFFECT OF ADVERTISING ON PRICE <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000352012900007','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000352012900007','bibtex')">BibTeX</a>]</p></td>
+	<td>{2015}</td>
+	<td>JOURNAL OF INDUSTRIAL ECONOMICS<br/>Vol. {63}({1}), pp. {199-222}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1111/joie.12067}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000352012900007" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Does advertising make markets more or less competitive? This paper lays<br>   out an econometric strategy for estimating the effect of advertising on<br>   prices that exploits seasonal demand and imperfect targeting of<br>   consumers. We find mostly negligible effects of advertising on prices at<br>   monthly frequency: among the 35 (of 131) product categories with<br>   sufficient advertising seasonality to justify second-stage estimation,<br>   only nine have a significant effect, and those are typically small. This<br>   finding is essentially the result of the much greater seasonality in<br>   advertising than price.</td>
+</tr>
+<tr id="bib_ISI:000352012900007" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000352012900007,
+  author = {Genesove, David and Simhon, Avi},
+  title = {SEASONALITY AND THE EFFECT OF ADVERTISING ON PRICE},
+  journal = {JOURNAL OF INDUSTRIAL ECONOMICS},
+  publisher = {WILEY-BLACKWELL},
+  year = {2015},
+  volume = {63},
+  number = {1},
+  pages = {199-222},
+  doi = {{10.1111/joie.12067}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000356436900005" class="entry">
+	<td>Empen, J., Loy, J.-P. and Weiss, C.</td>
+	<td>Price promotions and brand loyalty Empirical evidence for the German ready-to-eat cereal market <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000356436900005','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000356436900005','bibtex')">BibTeX</a>]</p></td>
+	<td>{2015}</td>
+	<td>EUROPEAN JOURNAL OF MARKETING<br/>Vol. {49}({5-6}), pp. {736-759}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1108/EJM-08-2013-0433}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000356436900005" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Purpose - This article aims to estimate the relationship between brand<br>   loyalty and price promotions on the German yoghurt market. It considers<br>   consumer loyalty to various corporate brands and their respective<br>   sub-brands to analyze promotional strategies between and within certain<br>   corporate brands with a larger loyal consumer segment and a moderate<br>   strength of consumer loyalty are well suited for effective price<br>   promotions following the idea of loss leader by Lal and Matutes (1994).<br>   Design/methodology/approach - The paper's approach follows Allender and<br>   Richards' (2012) and extends to explicitly considering the product line<br>   management of every manufacturer in the market. In the first step, a<br>   random coefficient logit specification is estimated to compute measures<br>   of brand loyalty for each brand. In the second step, the relationship<br>   between brand loyalty measures and the frequency and depth of price<br>   promotions is analysed.<br>   Findings - The results suggest that weaker corporate brands are promoted<br>   more aggressively supporting the model hypotheses by Kocas and Bohlmann<br>   (2008). Within the manufacturer's product line, sub-brands with a larger<br>   loyal consumer segment and a moderate strength of consumer loyalty are<br>   more often used for effective price promotions which reflects the idea<br>   of loss leading first introduced by Lal and Matutes (1994).<br>   Research limitations/implications - The results are limited to a static<br>   relationship between brand loyalty and price promotions. Analyzing the<br>   dynamics of the relationship between brand loyalty and price promotions<br>   should prove fruitful in enhancing the understanding of retailer<br>   strategies and provides additional implications for managerial decisions<br>   in retailing.<br>   Practical implications - Managers need to be more aware of the linkages<br>   between product line management and promotional strategies. Changes in<br>   the product line management may require a redirection of the promotional<br>   measures and strategies.<br>   Social implications - Consumer behavior with respect to brand loyalty to<br>   some extent determines price promotional strategies of retailers. The<br>   promotional strategies provide opportunities to save expenditures,<br>   especially for non-loyal and low income households.<br>   Originality/value - Matching and analyzing two detailed (consumer,<br>   retail) scanner data sets to investigate the relationship between the<br>   measures of brand loyalty and the retailers' price promotional<br>   strategies. Novel is the modeling of two different dimensions of brand<br>   loyalty (size and strength) and the consideration of sub-brands. The<br>   results clearly show that promotional strategies vary not only between<br>   corporate brands but also between sub-brands of the same corporate<br>   brand.</td>
+</tr>
+<tr id="bib_ISI:000356436900005" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000356436900005,
+  author = {Empen, Janine and Loy, Jens-Peter and Weiss, Christoph},
+  title = {Price promotions and brand loyalty Empirical evidence for the German ready-to-eat cereal market},
+  journal = {EUROPEAN JOURNAL OF MARKETING},
+  publisher = {EMERALD GROUP PUBLISHING LIMITED},
+  year = {2015},
+  volume = {49},
+  number = {5-6},
+  pages = {736-759},
+  doi = {{10.1108/EJM-08-2013-0433}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000368746600001" class="entry">
+	<td>Petrikaite, V.</td>
+	<td>Collusion with costly consumer search <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000368746600001','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000368746600001','bibtex')">BibTeX</a>]</p></td>
+	<td>{2016}</td>
+	<td>INTERNATIONAL JOURNAL OF INDUSTRIAL ORGANIZATION<br/>Vol. {44}, pp. {1-10}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1016/j.ijindorg.2015.10.006}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000368746600001" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: I use standard consumer search models to study how an increase in market<br>   transparency (lower search costs or higher share of fully informed<br>   consumers) affects cartel stability. When firms sell horizontally<br>   differentiated products, cartels become more stable as the search cost<br>   increases; with homogeneous products, by contrast, the opposite holds. A<br>   higher share of fully informed consumers makes collusion less stable<br>   when the market is initially sufficiently transparent, whereas it<br>   happens otherwise if the market is originally little transparent. (C)<br>   2015 Elsevier B.V. All rights reserved.</td>
+</tr>
+<tr id="bib_ISI:000368746600001" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000368746600001,
+  author = {Petrikaite, Vaiva},
+  title = {Collusion with costly consumer search},
+  journal = {INTERNATIONAL JOURNAL OF INDUSTRIAL ORGANIZATION},
+  publisher = {ELSEVIER SCIENCE BV},
+  year = {2016},
+  volume = {44},
+  pages = {1-10},
+  doi = {{10.1016/j.ijindorg.2015.10.006}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000368746600003" class="entry">
+	<td>Fevrier, P. and Wilner, L.</td>
+	<td>Do consumers correctly expect price reductions? Testing dynamic behavior <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000368746600003','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000368746600003','bibtex')">BibTeX</a>]</p></td>
+	<td>{2016}</td>
+	<td>INTERNATIONAL JOURNAL OF INDUSTRIAL ORGANIZATION<br/>Vol. {44}, pp. {25-40}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1016/j.ijindorg.2015.10.003}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000368746600003" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The assumption that consumers are fully rational and hold correct price<br>   expectations is demanding in dynamic settings. We claim that it is<br>   testable provided that market-level data on prices and purchases are<br>   available. We find that consumers hold simple expectations regarding the<br>   timing of promotions for music albums: consumers act as if they were<br>   aware of reductions but did not revise their beliefs over time. The<br>   anticipation effect, due to strategically delaying purchase, amounts to<br>   1/5 of the decision to purchase during regular periods. These results<br>   have implications in terms of demand estimation, optimal pricing and<br>   welfare computations. (C) 2015 Elsevier B.V. All rights reserved.</td>
+</tr>
+<tr id="bib_ISI:000368746600003" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000368746600003,
+  author = {Fevrier, Philippe and Wilner, Lionel},
+  title = {Do consumers correctly expect price reductions? Testing dynamic behavior},
+  journal = {INTERNATIONAL JOURNAL OF INDUSTRIAL ORGANIZATION},
+  publisher = {ELSEVIER SCIENCE BV},
+  year = {2016},
+  volume = {44},
+  pages = {25-40},
+  doi = {{10.1016/j.ijindorg.2015.10.003}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000369154000011" class="entry">
+	<td>France, S.L. and Ghose, S.</td>
+	<td>An Analysis and Visualization Methodology for Identifying and Testing Market Structure <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000369154000011','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000369154000011','bibtex')">BibTeX</a>]</p></td>
+	<td>{2016}</td>
+	<td>MARKETING SCIENCE<br/>Vol. {35}({1}), pp. {182-197}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1287/mksc.2015.0958}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000369154000011" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We introduce a method for identifying, analyzing, and visualizing<br>   submarkets in product categories. We give an overview of the market<br>   structure and competitive submarket literature and then describe a<br>   classic model for testing competitive submarkets along with associated<br>   extensions. In the era of big data and with the increasing availability<br>   of large-scale consumer purchase data, there is a need for techniques<br>   that can interpret these data and use them to help make managerial<br>   decisions. We introduce a statistical likelihood based technique for<br>   both identifying and testing market structure. We run a series of<br>   experiments on generated data and show that our method is better at<br>   identifying market structure from brand substitution data than a range<br>   of methods described in the marketing literature. We introduce tools for<br>   holdout validation, complexity control, and testing managerial<br>   hypotheses. We describe a method for visualization of submarket<br>   solutions, and we give several traditional consumer product examples and<br>   in addition give an example to show how market structure can be analyzed<br>   from online review data.</td>
+</tr>
+<tr id="bib_ISI:000369154000011" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000369154000011,
+  author = {France, Stephen L. and Ghose, Sanjoy},
+  title = {An Analysis and Visualization Methodology for Identifying and Testing Market Structure},
+  journal = {MARKETING SCIENCE},
+  publisher = {INFORMS},
+  year = {2016},
+  volume = {35},
+  number = {1},
+  pages = {182-197},
+  doi = {{10.1287/mksc.2015.0958}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000373145200007" class="entry">
+	<td>Sinitsyn, M.</td>
+	<td>Managing Price Promotions Within a Product Line <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000373145200007','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000373145200007','bibtex')">BibTeX</a>]</p></td>
+	<td>{2016}</td>
+	<td>MARKETING SCIENCE<br/>Vol. {35}({2}), pp. {304-318}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1287/mksc.2015.0938}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000373145200007" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: In this paper, I investigate the question of how a firm producing<br>   substitutes should coordinate price promotions of these products. I<br>   model price competition between two firms, each producing two products<br>   that are horizontally differentiated with respect to some<br>   characteristic. Consumers are divided into loyals, who always purchase<br>   their preferred product, and switchers, who have heterogeneous<br>   preferences for the four products. If consumers substitute easily<br>   between the products produced by one firm, the firms promote one product<br>   at a time to avoid cannibalization. If consumers mainly substitute<br>   between the products with the same characteristic, the firms often<br>   employ joint promotions with at least one product at a deep discount.<br>   If, at the same time, consumers easily substitute to the products in<br>   other categories, the firms use joint promotions less often and avoid<br>   simultaneous deep discounts.</td>
+</tr>
+<tr id="bib_ISI:000373145200007" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000373145200007,
+  author = {Sinitsyn, Maxim},
+  title = {Managing Price Promotions Within a Product Line},
+  journal = {MARKETING SCIENCE},
+  publisher = {INFORMS},
+  year = {2016},
+  volume = {35},
+  number = {2},
+  pages = {304-318},
+  doi = {{10.1287/mksc.2015.0938}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000380945400009" class="entry">
+	<td>Rosato, A.</td>
+	<td>Selling substitute goods to loss-averse consumers: limited availability, bargains, and rip-offs <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000380945400009','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000380945400009','bibtex')">BibTeX</a>]</p></td>
+	<td>{2016}</td>
+	<td>RAND JOURNAL OF ECONOMICS<br/>Vol. {47}({3}), pp. {709-733}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1111/1756-2171.12139}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000380945400009" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: This article derives the optimal pricing and product-availability<br>   strategies for a retailer selling two substitute goods to loss-averse<br>   consumers and shows that limited-availability sales manipulate consumers<br>   into an ex ante unfavorable purchase. The seller maximizes profits by<br>   raising the consumers' reference point through a tempting discount on a<br>   good available only in limited supply (the bargain), and cashing in with<br>   a high price on the other (the rip-off), which consumers buy if the<br>   bargain is not available to reduce their disappointment. The seller<br>   might prefer to offer a deal on the more valuable product, using it as a<br>   bait.</td>
+</tr>
+<tr id="bib_ISI:000380945400009" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000380945400009,
+  author = {Rosato, Antonio},
+  title = {Selling substitute goods to loss-averse consumers: limited availability, bargains, and rip-offs},
+  journal = {RAND JOURNAL OF ECONOMICS},
+  publisher = {WILEY},
+  year = {2016},
+  volume = {47},
+  number = {3},
+  pages = {709-733},
+  doi = {{10.1111/1756-2171.12139}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000383338700009" class="entry">
+	<td>Richards, T.J., Hamilton, S.F. and Allender, W.</td>
+	<td>Search and price dispersion in online grocery markets <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000383338700009','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000383338700009','bibtex')">BibTeX</a>]</p></td>
+	<td>{2016}</td>
+	<td>INTERNATIONAL JOURNAL OF INDUSTRIAL ORGANIZATION<br/>Vol. {47}, pp. {255-281}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1016/j.ijindorg.2016.05.004}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000383338700009" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Consumers often purchase multiple products at a time from retailers,<br>   creating multi-product incentives for search. In this paper we consider<br>   how product variety affects consumer search intensity and the dispersion<br>   of prices in multi-product retail markets. We employ online grocery<br>   pricing data from four large retailers in the UK to estimate search<br>   costs and equilibrium price dispersion for food products under<br>   circumstances where: (i) consumers search for single products; and (ii)<br>   consumers search for multiple products at once. We compare estimates in<br>   each case between a model in which utility increases with product<br>   variety and a model in which utility is not a function of variety.<br>   Relative to our preferred specification with variety effects in utility,<br>   we find estimates of both search cost and search frequency to be biased<br>   upwards in single product settings when variety effects are ignored;<br>   however, we find estimates of search costs are biased upwards while<br>   search frequency is biased downwards in multi-product settings when<br>   variety effects in utility are ignored. (C) 2016 Elsevier B.V. All<br>   rights reserved.</td>
+</tr>
+<tr id="bib_ISI:000383338700009" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000383338700009,
+  author = {Richards, Timothy J. and Hamilton, Stephen F. and Allender, William},
+  title = {Search and price dispersion in online grocery markets},
+  journal = {INTERNATIONAL JOURNAL OF INDUSTRIAL ORGANIZATION},
+  publisher = {ELSEVIER SCIENCE BV},
+  year = {2016},
+  volume = {47},
+  pages = {255-281},
+  doi = {{10.1016/j.ijindorg.2016.05.004}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000388061400018" class="entry">
+	<td>Shi, S.</td>
+	<td>Customer relationship and sales <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000388061400018','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000388061400018','bibtex')">BibTeX</a>]</p></td>
+	<td>{2016}</td>
+	<td>JOURNAL OF ECONOMIC THEORY<br/>Vol. {166}, pp. {483-516}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1016/j.jet.2016.09.012}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000388061400018" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: In a large market where sellers post the terms of trade to direct<br>   search, I prove that customer relationships arise endogenously in the<br>   equilibrium as buyers make repeat purchases and sellers give priority to<br>   repeat trades. When the buyer-seller ratio is low, the equilibrium is<br>   separating between related and unrelated individuals. When the<br>   buyer-seller ratio is high, the equilibrium is partially mixing because<br>   a newly related seller attracts both the related buyer and unrelated<br>   buyers. Customer relationships improve welfare by reducing coordination<br>   frictions and helping sellers learn about the related buyer's utility.<br>   However, an equilibrium is constrained efficient only when it is<br>   separating and when the buyer seller ratio is low. Moreover, customer<br>   relationships induce microprice dynamics, including sales, even when<br>   market conditions are constant. I examine how market conditions affect<br>   markups, the frequency and the sale duration, both analytically and in a<br>   calibrated example. (C) 2016 Elsevier Inc. All rights reserved.</td>
+</tr>
+<tr id="bib_ISI:000388061400018" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000388061400018,
+  author = {Shi, Shouyong},
+  title = {Customer relationship and sales},
+  journal = {JOURNAL OF ECONOMIC THEORY},
+  publisher = {ACADEMIC PRESS INC ELSEVIER SCIENCE},
+  year = {2016},
+  volume = {166},
+  pages = {483-516},
+  doi = {{10.1016/j.jet.2016.09.012}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000388441900011" class="entry">
+	<td>Hedgcock, W.M., Rao, R.S. and Chen, H.(A.</td>
+	<td>Choosing to Choose: The Effects of Decoys and Prior Choice on Deferral <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000388441900011','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000388441900011','bibtex')">BibTeX</a>]</p></td>
+	<td>{2016}</td>
+	<td>MANAGEMENT SCIENCE<br/>Vol. {62}({10}), pp. {2952-2976}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1287/mnsc.2015.2289}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000388441900011" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Sellers are often more interested in inducing buyers to make a<br>   choice-any choice-than in influencing which option they choose. For<br>   example, many retailers are more concerned about maximizing customer<br>   purchases within categories than influencing which brand is purchased in<br>   any particular category. Although this issue is important to researchers<br>   and practitioners, research on how contextual factors, such as decoys<br>   and prior decisions, affect whether consumers will ``choose to<br>   choose'' is scarce. We propose a reference-dependent model to fill<br>   this gap. This model unites several streams of research and leads to<br>   novel predictions that are tested and supported in four experiments. The<br>   paper concludes with a discussion of the theoretical and practical<br>   implications of the findings.</td>
+</tr>
+<tr id="bib_ISI:000388441900011" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000388441900011,
+  author = {Hedgcock, William M. and Rao, Raghunath Singh and Chen, Haipeng (Allan)},
+  title = {Choosing to Choose: The Effects of Decoys and Prior Choice on Deferral},
+  journal = {MANAGEMENT SCIENCE},
+  publisher = {INFORMS},
+  year = {2016},
+  volume = {62},
+  number = {10},
+  pages = {2952-2976},
+  doi = {{10.1287/mnsc.2015.2289}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000393015500004" class="entry">
+	<td>Helland, L., Moen, E.R. and Preugschat, E.</td>
+	<td>Infoiniation and coordination frictions in experimental posted offer markets <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000393015500004','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000393015500004','bibtex')">BibTeX</a>]</p></td>
+	<td>{2017}</td>
+	<td>JOURNAL OF ECONOMIC THEORY<br/>Vol. {167}, pp. {53-74}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1016/j.jet.2016.09.007}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000393015500004" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We experimentally investigate buyer and seller behavior in small markets<br>   with two kinds of frictions. First, a subset of buyers may have<br>   (severely) limited information about prices, and choose a seller at<br>   random. Second, sellers may not be able to serve all potential<br>   customers. Such capacity constraints can lead to coordination frictions<br>   where some sellers and buyers may not be able to trade. Theory predicts<br>   very different equilibrium outcomes when we vary the set-up along these<br>   two dimensions. In particular, it implies that a higher number of<br>   informed buyers will lead to lower prices when sellers do not face<br>   capacity constraints, while prices may actually increase if sellers are<br>   capacity constrained, as shown by Lester (2011). In the experiment, the<br>   differences between the constrained and non-constrained case are<br>   confirmed; prices fall when sellers are not capacity constrained but<br>   either do not fall by much or even increase when they are not. We find<br>   that prices are quite close to the predicted equilibrium values except<br>   in treatments where unconstrained sellers face a large fraction of<br>   informed buyers. However, introducing noise into the theoretical<br>   decision making process produces a pattern of deviations that fits well<br>   with the observed ones. (C) 2016 Elsevier Inc. All rights reserved.</td>
+</tr>
+<tr id="bib_ISI:000393015500004" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000393015500004,
+  author = {Helland, Leif and Moen, Espen R. and Preugschat, Edgar},
+  title = {Infoiniation and coordination frictions in experimental posted offer markets},
+  journal = {JOURNAL OF ECONOMIC THEORY},
+  publisher = {ACADEMIC PRESS INC ELSEVIER SCIENCE},
+  year = {2017},
+  volume = {167},
+  pages = {53-74},
+  doi = {{10.1016/j.jet.2016.09.007}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000394069600016" class="entry">
+	<td>Moraga-Gonzalez, J.L., Sandor, Z. and Wildenbeest, M.R.</td>
+	<td>Nonsequential search equilibrium with search cost heterogeneity <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000394069600016','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000394069600016','bibtex')">BibTeX</a>]</p></td>
+	<td>{2017}</td>
+	<td>INTERNATIONAL JOURNAL OF INDUSTRIAL ORGANIZATION<br/>Vol. {50}, pp. {392-414}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1016/j.ijindorg.2016.06.009}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000394069600016" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We generalize the model of Burdett and Judd (1983) to the case where an<br>   arbitrary finite number of firms sells a homogeneous good to buyers who<br>   have heterogeneous search costs. We show that a price dispersed<br>   symmetric Nash equilibrium always exists. Numerical results show that<br>   the behavior of prices and consumer surplus with respect to the number<br>   of firms hinges upon the nature of seardh cost dispersion: when search<br>   costs are relatively concentrated, entry of firms leads to lower average<br>   prices and greater consumer surplus; however, for relatively dispersed<br>   search costs, the mean price goes up and consumer surplus may decrease<br>   with the number of firms. (C) 2016 Elsevier B.V. All rights reserved.</td>
+</tr>
+<tr id="bib_ISI:000394069600016" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000394069600016,
+  author = {Moraga-Gonzalez, Jose Luis and Sandor, Zsolt and Wildenbeest, Matthijs R.},
+  title = {Nonsequential search equilibrium with search cost heterogeneity},
+  journal = {INTERNATIONAL JOURNAL OF INDUSTRIAL ORGANIZATION},
+  publisher = {ELSEVIER SCIENCE BV},
+  year = {2017},
+  volume = {50},
+  pages = {392-414},
+  doi = {{10.1016/j.ijindorg.2016.06.009}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000394816300003" class="entry">
+	<td>Volpe, R., Risch, C. and Boland, M.</td>
+	<td>The Determinants of Price Adjustments in Retail Supermarkets <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000394816300003','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000394816300003','bibtex')">BibTeX</a>]</p></td>
+	<td>{2017}</td>
+	<td>MANAGERIAL AND DECISION ECONOMICS<br/>Vol. {38}({1}), pp. {37-52}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1002/mde.2737}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000394816300003" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: This paper examines the determinants of price adjustment decisions by<br>   supermarkets to increase or decrease prices for 11 different food<br>   categories and evaluates the characteristics of these firms that<br>   influence these decisions. We use a unique dataset to analyze firm<br>   variables and industry variables and their impact on price adjustment in<br>   supermarket stores. The study contributes to the price adjustment<br>   literature by identifying determinants of price behavior by stores and<br>   product category. We find that the rationale for increasing prices<br>   differs from that for decreasing prices, retailers make different<br>   adjustment decisions based on product category, and market-level<br>   controls have little impact. Copyright (C) 2015 John Wiley &amp; Sons, Ltd.</td>
+</tr>
+<tr id="bib_ISI:000394816300003" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000394816300003,
+  author = {Volpe, Richard and Risch, Corey and Boland, Michael},
+  title = {The Determinants of Price Adjustments in Retail Supermarkets},
+  journal = {MANAGERIAL AND DECISION ECONOMICS},
+  publisher = {JOHN WILEY &amp; SONS LTD},
+  year = {2017},
+  volume = {38},
+  number = {1},
+  pages = {37-52},
+  doi = {{10.1002/mde.2737}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000399303600002" class="entry">
+	<td>Schultz, C.</td>
+	<td>Collusion in Markets with Imperfect Price Information on Both Sides <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000399303600002','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000399303600002','bibtex')">BibTeX</a>]</p></td>
+	<td>{2017}</td>
+	<td>REVIEW OF INDUSTRIAL ORGANIZATION<br/>Vol. {50}({3}), pp. {287-301}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1007/s11151-016-9539-7}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000399303600002" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The paper considers tacit collusion in markets that are not fully<br>   transparent on both sides. Consumers only detect prices with some<br>   probability before deciding which firm to purchase from, and each firm<br>   only detects the other firm's price with some probability. Increasing<br>   transparency on the producer side facilitates collusion, while<br>   increasing transparency on the consumer side makes collusion more<br>   difficult. Conditions are given under which increases in a common factor<br>   that affects transparency positively on both sides are pro-competitive.<br>   With two standard information technologies, this holds when firms are<br>   easier to inform than are consumers.</td>
+</tr>
+<tr id="bib_ISI:000399303600002" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000399303600002,
+  author = {Schultz, Christian},
+  title = {Collusion in Markets with Imperfect Price Information on Both Sides},
+  journal = {REVIEW OF INDUSTRIAL ORGANIZATION},
+  publisher = {SPRINGER},
+  year = {2017},
+  volume = {50},
+  number = {3},
+  pages = {287-301},
+  doi = {{10.1007/s11151-016-9539-7}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000399303600005" class="entry">
+	<td>Sibly, H.</td>
+	<td>Pricing Strategies with Costly Customer Arbitrage <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000399303600005','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000399303600005','bibtex')">BibTeX</a>]</p></td>
+	<td>{2017}</td>
+	<td>REVIEW OF INDUSTRIAL ORGANIZATION<br/>Vol. {50}({3}), pp. {345-366}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1007/s11151-016-9533-0}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000399303600005" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: A monopolist's ability to conduct non-linear pricing is limited because<br>   customers can, at a cost, unbundle bundled output. Three pricing<br>   strategies are available to a firm: (1) a separating strategy; (2) a<br>   pooling strategy; and (3) an exclusion strategy. Each is optimal for<br>   some set of unbundling cost and distribution of customer types. The<br>   optimal pricing strategies are contrasted with the well-studied<br>   benchmark cases, in which unbundling costs are either zero or<br>   arbitrarily high. It is shown that it is not always possible to<br>   extrapolate the conclusions from the benchmark cases with respect to<br>   pricing, profitability, consumer surplus or efficiency.</td>
+</tr>
+<tr id="bib_ISI:000399303600005" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000399303600005,
+  author = {Sibly, Hugh},
+  title = {Pricing Strategies with Costly Customer Arbitrage},
+  journal = {REVIEW OF INDUSTRIAL ORGANIZATION},
+  publisher = {SPRINGER},
+  year = {2017},
+  volume = {50},
+  number = {3},
+  pages = {345-366},
+  doi = {{10.1007/s11151-016-9533-0}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000413963400012" class="entry">
+	<td>Babutsidze, Z.</td>
+	<td>Duopolistic Price Competition with Captives <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000413963400012','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000413963400012','bibtex')">BibTeX</a>]</p></td>
+	<td>{2017}</td>
+	<td>METROECONOMICA<br/>Vol. {68}({4}), pp. {903-926}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1111/meca.12151}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000413963400012" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We extend the Bertrand duopolistic competition to include captives.<br>   These are consumers that have no choice between the suppliers. Usual<br>   population of shoppers are modeled performing a sequential search in<br>   order to decide where to buy a homogenous good. These two simple<br>   departures from the original setup have sharp consequences. First, we<br>   find that duopolistic price competition is not robust to inclusion of<br>   captives. The equilibrium results starkly differ and the only possible<br>   equilibrium now includes duopolists charging monopolistic prices.<br>   Second, addition of sequential search introduces multiplicity of pure<br>   strategy Nash equilibria. In this setup, we observe perverse optimal<br>   response to competitor's price changes. Notably, we find that the firm<br>   might want to reduce the price in response to the competitor's price<br>   increase, which is at odds with the usual undercutting principle. Third,<br>   we investigate the behavior of equilibrium prices depending on the<br>   heterogeneity in consumer risk attitudes. We find that the higher<br>   consumer heterogeneity with respect to acceptance of risky gambles leads<br>   to higher prices in equilibrium.</td>
+</tr>
+<tr id="bib_ISI:000413963400012" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000413963400012,
+  author = {Babutsidze, Zakaria},
+  title = {Duopolistic Price Competition with Captives},
+  journal = {METROECONOMICA},
+  publisher = {WILEY},
+  year = {2017},
+  volume = {68},
+  number = {4},
+  pages = {903-926},
+  doi = {{10.1111/meca.12151}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000414241700008" class="entry">
+	<td>Crosetto, P. and Gaudeul, A.</td>
+	<td>Choosing not to compete: Can firms maintain high prices by confusing consumers? <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000414241700008','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000414241700008','bibtex')">BibTeX</a>]</p></td>
+	<td>{2017}</td>
+	<td>JOURNAL OF ECONOMICS &amp; MANAGEMENT STRATEGY<br/>Vol. {26}({4}), pp. {897-922}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1111/jems.12212}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000414241700008" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Firms with very similar products often present their products in<br>   different ways. This makes it difficult for consumers to find out which<br>   product fits their needs best, or which one is the cheapest. Why is<br>   there no convergence toward common ways to present products? Is it<br>   possible for firms to maintain high prices by confusing consumers? We<br>   run a market experiment to investigate those questions. In our market,<br>   firms choose how to present their products in addition to choosing their<br>   price. We find that firms maintain different ways to present their<br>   products and that this allows them to maintain high prices. This<br>   behavior is not consistent with competitive behavior, such as when firms<br>   adopt best responses to each other, imitate the most successful firm, or<br>   learn the best strategy over time. Rather, our results are only<br>   consistent with cooperation between firms. Firms cooperate by not<br>   imitating the way other firms present their products. Cooperation is<br>   maintained by the threat of tough competition if a firm makes its<br>   product easy to compare with others. Firms are all the more likely to<br>   maintain such cooperation if their products do not actually differ much.<br>   This is because in that case, maintaining differences in the<br>   presentation of their products is the only way to maintain profits.</td>
+</tr>
+<tr id="bib_ISI:000414241700008" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000414241700008,
+  author = {Crosetto, Paolo and Gaudeul, Alexia},
+  title = {Choosing not to compete: Can firms maintain high prices by confusing consumers?},
+  journal = {JOURNAL OF ECONOMICS &amp; MANAGEMENT STRATEGY},
+  publisher = {WILEY},
+  year = {2017},
+  volume = {26},
+  number = {4},
+  pages = {897-922},
+  doi = {{10.1111/jems.12212}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000416278500006" class="entry">
+	<td>Gonzalez, X.</td>
+	<td>Chain heterogeneity and price-setting behavior: Evidence from e-grocery retailers <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000416278500006','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000416278500006','bibtex')">BibTeX</a>]</p></td>
+	<td>{2017}</td>
+	<td>ELECTRONIC COMMERCE RESEARCH AND APPLICATIONS<br/>Vol. {26}, pp. {62-72}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1016/j.elerap.2017.09.008}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000416278500006" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: This paper investigates the role of chain heterogeneity in price-setting<br>   decisions. The data set comprises more than 1.5 million daily price<br>   observations gathered from Web pages of the main grocery retailer chains<br>   operating in Spain. The empirical analysis reveals that pricing<br>   strategies at the chain level (i.e., not at the individual store level)<br>   play a significant role on the frequency with prices are changed and<br>   also on the level of prices. For a given product, there is far more<br>   variation in price levels across chains than among the stores within a<br>   chain. Furthermore, our results suggest that some retail chains set<br>   regular prices in a centralized fashion. We explore other drivers of the<br>   frequency of price changes by estimating an instrumental variables<br>   Poisson model. We find that more popular products exhibit more price<br>   changes and that rivals' price changes have a positive and significant<br>   effect. (C) 2017 Elsevier B.V. All rights reserved.</td>
+</tr>
+<tr id="bib_ISI:000416278500006" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000416278500006,
+  author = {Gonzalez, Xulia},
+  title = {Chain heterogeneity and price-setting behavior: Evidence from e-grocery retailers},
+  journal = {ELECTRONIC COMMERCE RESEARCH AND APPLICATIONS},
+  publisher = {ELSEVIER SCIENCE BV},
+  year = {2017},
+  volume = {26},
+  pages = {62-72},
+  doi = {{10.1016/j.elerap.2017.09.008}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000419870500003" class="entry">
+	<td>Russo, C. and Goodhue, R.</td>
+	<td>Farmgate prices, retail prices, and supermarkets' pricing decisions: An integrated approach <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000419870500003','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000419870500003','bibtex')">BibTeX</a>]</p></td>
+	<td>{2018}</td>
+	<td>AGRIBUSINESS<br/>Vol. {34}({1, SI}), pp. {24-43}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1002/agr.21530}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000419870500003" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Agricultural and food prices exhibit several empirical regularities that<br>   are not easily explained by conventional perfect competition or market<br>   power models, including asymmetric price transmission, food price<br>   rigidity, farmgate price volatility, and low correlation between prices<br>   at different stages of the supply chain. We focus on this set of market<br>   features and conclude that they can be the outcome of a competition<br>   model where supermarket use promotions to strategically attract basket<br>   shoppers. We present a numerical simulation to show that complex price<br>   patterns including all the features indicated above can be obtained from<br>   a general store traffic competition model without the need of<br>   introducing ad hoc assumptions. [EconLit citations: Q11, Q13].</td>
+</tr>
+<tr id="bib_ISI:000419870500003" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000419870500003,
+  author = {Russo, Carlo and Goodhue, Rachael},
+  title = {Farmgate prices, retail prices, and supermarkets' pricing decisions: An integrated approach},
+  journal = {AGRIBUSINESS},
+  publisher = {WILEY},
+  year = {2018},
+  volume = {34},
+  number = {1, SI},
+  pages = {24-43},
+  note = {153rd Seminar of the European-Association-of-Agricultural-Economists on New Dimension of Market Power and Bargaining in the Agri-Food-Sector - Organizations, Policies and Models, Gaeta, ITALY, JUN 09-10, 2016},
+  doi = {{10.1002/agr.21530}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000423123200011" class="entry">
+	<td>Sinitsyn, M.</td>
+	<td>Pricing with Prescheduled Sales <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000423123200011','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000423123200011','bibtex')">BibTeX</a>]</p></td>
+	<td>{2017}</td>
+	<td>MARKETING SCIENCE<br/>Vol. {36}({6}), pp. {999-1014}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1287/mksc.2017.1052}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000423123200011" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: In this paper, I introduce a framework of price promotions by firms that<br>   preschedule their sale dates. I set up a dynamic model of demand<br>   accumulation in which high-and low-valuation consumers enter the market<br>   every period. The high-valuation consumers buy immediately and leave the<br>   market; the low-valuation consumers accumulate while waiting for the<br>   sale price. The firms schedule the dates of their promotions in advance.<br>   I find that often they use mixed strategies, choosing the future<br>   promotion period according to a probability distribution function. If<br>   the firms can cancel their prescheduled sales, typically they can wait<br>   longer until holding sales by shifting the probability distribution<br>   towards later periods. Scheduling promotions in advance increases the<br>   firms' profits in comparison to the case when the promotion decision is<br>   made in the period when the promotion is offered.</td>
+</tr>
+<tr id="bib_ISI:000423123200011" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000423123200011,
+  author = {Sinitsyn, Maxim},
+  title = {Pricing with Prescheduled Sales},
+  journal = {MARKETING SCIENCE},
+  publisher = {INFORMS},
+  year = {2017},
+  volume = {36},
+  number = {6},
+  pages = {999-1014},
+  doi = {{10.1287/mksc.2017.1052}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000442349600003" class="entry">
+	<td>Amornpetchkul, T.(B., Ahn, H.-S. and Sahin, O.</td>
+	<td>Conditional Promotions and Consumer Overspending <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000442349600003','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000442349600003','bibtex')">BibTeX</a>]</p></td>
+	<td>{2018}</td>
+	<td>PRODUCTION AND OPERATIONS MANAGEMENT<br/>Vol. {27}({8}), pp. {1455-1475}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1111/poms.12877}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000442349600003" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: This study investigates the effects of conditional promotions (e.g., buy<br>   2 or more, get 30&#37; off; spend &dollar;50 or more, get &dollar;15 off) on consumer<br>   behavior and the seller's profit. When a deal is presented with a<br>   minimum purchase quantity or a minimum spending requirement,<br>   experimental studies have shown some consumers are induced to spend more<br>   in order to obtain a discount. To study this behavior, we model a market<br>   in which consumers can be heterogeneous in two dimensions: willingness<br>   to pay for the product and deal proneness to a price discount. We<br>   examine two types of conditional promotions that are widely used in<br>   practice: (i) all-unit discount, in which a price reduction applies to<br>   every unit of a purchase once the minimum requirement is met, and (ii)<br>   fixed-amount discount, in which a fixed amount of discount is awarded to<br>   the total expense that meets the requirement. We show that deal-prone<br>   consumers may be induced to overspend when offered a conditional<br>   discount. However, consumer overspending benefits the seller only when<br>   the market contains a sufficiently large proportion of highly deal-prone<br>   or high-valuation consumers. Comparing the two types of discounts, we<br>   show that the all-unit discount outperforms the fixed-amount discount<br>   when the regular price for the product is high, whereas the fixed-amount<br>   discount is more profitable than the all-unit discount when some<br>   consumers would make a purchase even without a discount. Our study<br>   suggests adopting an appropriate type of conditional discount can<br>   effectively improve the seller's profit over what would be obtained<br>   through selling at the regular price or a conventional price markdown.<br>   Furthermore, we find that conditional discounts can also improve<br>   consumer welfare, resulting in win-winsituations for both retailers and<br>   consumers.</td>
+</tr>
+<tr id="bib_ISI:000442349600003" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000442349600003,
+  author = {Amornpetchkul, Thunyarat (Barn) and Ahn, Hyun-Soo and Sahin, Ozge},
+  title = {Conditional Promotions and Consumer Overspending},
+  journal = {PRODUCTION AND OPERATIONS MANAGEMENT},
+  publisher = {WILEY},
+  year = {2018},
+  volume = {27},
+  number = {8},
+  pages = {1455-1475},
+  doi = {{10.1111/poms.12877}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000445988800049" class="entry">
+	<td>Petkov, V.</td>
+	<td>A model of sales with differentiated and homogeneous goods <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000445988800049','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000445988800049','bibtex')">BibTeX</a>]</p></td>
+	<td>{2018}</td>
+	<td>ECONOMICS LETTERS<br/>Vol. {171}, pp. {214-217}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1016/j.econlet.2018.08.005}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000445988800049" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: This paper extends the classical model of sales (Varian, 1980;<br>   Rosenthal, 1980) by adding product differentiation. Instead of<br>   uninformed (i.e. loyal) customers, our setting features ``variety<br>   seekers''. These consumers regard the products as imperfect<br>   substitutes. As in the original model, the firms also serve ``bargain<br>   seekers'' who buy the cheapest product. The discontinuous demand<br>   structure precludes any pure-strategy equilibria. We characterize the<br>   symmetric mixed-strategy equilibrium of the modified game. In contrast<br>   to the original model, the upper bound on prices and the equilibrium<br>   expected profits are decreasing in the mass of bargain seekers. (C) 2018<br>   Elsevier B.V. All rights reserved.</td>
+</tr>
+<tr id="bib_ISI:000445988800049" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000445988800049,
+  author = {Petkov, Vladimir},
+  title = {A model of sales with differentiated and homogeneous goods},
+  journal = {ECONOMICS LETTERS},
+  publisher = {ELSEVIER SCIENCE SA},
+  year = {2018},
+  volume = {171},
+  pages = {214-217},
+  doi = {{10.1016/j.econlet.2018.08.005}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:000447218900005" class="entry">
+	<td>Cosandier, C., Garcia, F. and Knauff, M.</td>
+	<td>Price competition with differentiated goods and incomplete product awareness <p class="infolinks">[<a href="javascript:toggleInfo('ISI:000447218900005','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:000447218900005','bibtex')">BibTeX</a>]</p></td>
+	<td>{2018}</td>
+	<td>ECONOMIC THEORY<br/>Vol. {66}({3, SI}), pp. {681-705}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.1007/s00199-017-1050-3}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:000447218900005" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We investigate the effects of increased transparency on prices in the<br>   Bertrand duopoly model. Market transparency is defined as the proportion<br>   of consumers that are fully informed about the market and thus not<br>   captive to one firm. We consider two main cases of strategic<br>   interaction, prices as strategic complements and as strategic<br>   substitutes. For the former class of games, conventional wisdom<br>   concerning prices is confirmed, in that they decrease with market<br>   transparency. Consumer welfare always increases with higher transparency<br>   but changes in firms' profits are ambiguous. For the latter class of<br>   games, an increase in market transparency may lead to an increase in one<br>   of the prices, which implies ambiguous effects on both consumer welfare<br>   and firms' profits. An example with linear demand for differentiated<br>   products is also investigated. The results of the paper shed light on<br>   the mixed evidence concerning the effects of the Internet on retail<br>   markets and may illuminate some of the ongoing related public policy<br>   debates.</td>
+</tr>
+<tr id="bib_ISI:000447218900005" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:000447218900005,
+  author = {Cosandier, Charlene and Garcia, Filomena and Knauff, Malgorzata},
+  title = {Price competition with differentiated goods and incomplete product awareness},
+  journal = {ECONOMIC THEORY},
+  publisher = {SPRINGER},
+  year = {2018},
+  volume = {66},
+  number = {3, SI},
+  pages = {681-705},
+  doi = {{10.1007/s00199-017-1050-3}}
+}
+</pre></td>
+</tr>
+<tr id="ISI:A1995QZ14600003" class="entry">
+	<td>WARNER, E. and BARSKY, R.</td>
+	<td>THE TIMING AND MAGNITUDE OF RETAIL STORE MARKDOWNS - EVIDENCE FROM WEEKENDS AND HOLIDAYS <p class="infolinks">[<a href="javascript:toggleInfo('ISI:A1995QZ14600003','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ISI:A1995QZ14600003','bibtex')">BibTeX</a>]</p></td>
+	<td>{1995}</td>
+	<td>QUARTERLY JOURNAL OF ECONOMICS<br/>Vol. {110}({2}), pp. {321-352}&nbsp;</td>
+	<td>article</td>
+	<td><a href="{10.2307/2118442}">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_ISI:A1995QZ14600003" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We examine daily prices of eight goods at seventeen retail stores<br>   collected in Ann Arbor, Michigan, over a four-month period from November<br>   1 to February 28.  We focus on weekly and seasonal price patterns, and<br>   on the frequency of price markdowns or `'sales.''  There were frequent<br>   markdowns in the intensive shopping period prior to Christmas, and a<br>   tendency for such sales to occur on weekends.  We interpret these<br>   findings as evidence that a significant number of markdowns are timed to<br>   occur when shopping intensity is exogeneously high.  We complement the<br>   imperfect information-based motives for sales in the literature by<br>   contributing an additional element based on the role of bulk shopping<br>   and increasing returns in the shopping technology.</td>
+</tr>
+<tr id="bib_ISI:A1995QZ14600003" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{ISI:A1995QZ14600003,
+  author = {WARNER, EJ and BARSKY, RB},
+  title = {THE TIMING AND MAGNITUDE OF RETAIL STORE MARKDOWNS - EVIDENCE FROM WEEKENDS AND HOLIDAYS},
+  journal = {QUARTERLY JOURNAL OF ECONOMICS},
+  publisher = {MIT PRESS},
+  year = {1995},
+  volume = {110},
+  number = {2},
+  pages = {321-352},
+  doi = {{10.2307/2118442}}
+}
+</pre></td>
+</tr>
+</tbody>
+</table>
+<footer>
+ <small>Created by <a href="http://jabref.sourceforge.net">JabRef</a> on 21/03/2019.</small>
+</footer>
+<!-- file generated by JabRef -->
+</body>
+</html>
